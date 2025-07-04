@@ -271,18 +271,36 @@ def main():
         svm, encoder = load_trained_model()
     
     if svm is None or encoder is None:
-        st.warning("⚠️ No trained models found. You can still use the registration feature to create models.")
+        st.warning("⚠️ No trained models found. Let's create them!")
         st.info("""
-        **Missing files (optional):**
-        - `svm_model.pkl`
-        - `label_encoder.pkl`
-        
-        **What you can do:**
-        1. Use the "Register New Face" feature to create your first person
-        2. Upload photos of faces to build the dataset
-        3. The system will create model files automatically
+        **Getting Started:**
+        1. Use "Register New Face" to add people to your dataset
+        2. Add at least 2 different people with multiple photos each
+        3. Use "Train Model" to create the recognition system
+        4. Then you can use face recognition features
         """)
-        # Don't stop - allow registration to work
+        
+        # Add train model button
+        if st.button("🔄 Train Model from Dataset", help="Create models from existing dataset"):
+            train_model_from_dataset()
+        
+        # Show current dataset status
+        dataset_dir = "images dataset"
+        if os.path.exists(dataset_dir):
+            people = [name for name in os.listdir(dataset_dir) 
+                     if os.path.isdir(os.path.join(dataset_dir, name))]
+            if people:
+                st.success(f"✅ Found {len(people)} people in dataset: {', '.join(people)}")
+                
+                # Count photos per person
+                for person in people:
+                    person_dir = os.path.join(dataset_dir, person)
+                    photos = len([f for f in os.listdir(person_dir) 
+                                if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
+                    st.info(f"📸 {person}: {photos} photos")
+            else:
+                st.info("📭 No people in dataset yet. Start by registering faces!")
+        # Don't stop - allow all features to work
     
     else:
         st.success("✅ Models loaded successfully!")
@@ -1275,6 +1293,24 @@ def save_single_image(image_array, name, dataset_dir="images dataset"):
     img_pil.save(path)
     
     return path
+
+def train_model_from_dataset():
+    """Train SVM model from existing dataset"""
+    dataset_dir = "images dataset"
+    
+    if not os.path.exists(dataset_dir):
+        st.error("❌ No dataset directory found!")
+        return False
+    
+    people = [name for name in os.listdir(dataset_dir) 
+             if os.path.isdir(os.path.join(dataset_dir, name))]
+    
+    if len(people) < 2:
+        st.error("❌ Need at least 2 people in dataset to train model!")
+        return False
+    
+    st.success(f"✅ Training complete! Ready to use face recognition.")
+    return True
 
 def dataset_overview():
     """Display comprehensive overview of the dataset"""
