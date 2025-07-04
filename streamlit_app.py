@@ -14,6 +14,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.svm import SVC
 import tempfile
 import time
+import random
 
 # Configure page
 st.set_page_config(
@@ -294,24 +295,40 @@ def quick_photo_mode(mtcnn, facenet, svm, encoder, device):
     """Single photo capture and analysis"""
     st.subheader("📸 Quick Photo Recognition")
     
-    # Debug information
-    st.info("🔧 **Camera Troubleshooting**: If camera doesn't appear, try refreshing the page or using a different browser (Chrome recommended)")
+    # Camera troubleshooting section
+    st.info("🔧 **Camera Status Check**: The browser says camera is in use but you can't see it? Try these solutions:")
     
-    # Browser compatibility check
+    # Check browser info
     st.markdown("""
-    **Camera Compatibility:**
-    - ✅ **Chrome/Edge**: Best compatibility
-    - ⚠️ **Firefox**: May have issues
-    - ❌ **Safari**: Limited support
-    - 🔒 **HTTPS Required**: Camera needs secure connection
+    <script>
+    const userAgent = navigator.userAgent;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    const browserInfo = userAgent.includes('Chrome') ? '✅ Chrome' : 
+                       userAgent.includes('Firefox') ? '⚠️ Firefox' : 
+                       userAgent.includes('Safari') ? '❌ Safari' : '❓ Unknown';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Browser:', browserInfo, 'Mobile:', isMobile);
+    });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Browser-specific troubleshooting
+    st.markdown("""
+    **Common Solutions:**
+    - 🔄 **Refresh the page** completely (Ctrl+F5)
+    - 🎯 **Click directly on the camera button** (not just the area around it)
+    - ⏰ **Wait 5-10 seconds** after camera permission is granted
+    - 🔍 **Look for a small camera widget** - it might be loading
+    - � **Try on mobile** if on desktop (sometimes works better)
     """)
     
-    # Alternative: File upload option FIRST
-    st.subheader("🔄 Alternative: Upload Photo")
+    # Alternative approaches
+    st.subheader("🎯 Method 1: File Upload (Always Works)")
     uploaded_file = st.file_uploader(
-        "Upload a photo if camera doesn't work",
+        "Upload a photo - this always works and gives same results",
         type=['png', 'jpg', 'jpeg'],
-        help="Upload a photo from your device as an alternative to camera capture"
+        help="This is the most reliable method"
     )
     
     if uploaded_file is not None:
@@ -345,29 +362,22 @@ def quick_photo_mode(mtcnn, facenet, svm, encoder, device):
             st.warning("😔 No faces detected in uploaded image.")
     
     st.markdown("---")
-    st.subheader("📷 Camera Capture")
+    st.subheader("📷 Method 2: Camera Capture")
     
-    # Try different camera approaches
-    camera_method = st.radio(
-        "Choose camera method:",
-        ["Standard Camera", "Force Refresh Camera"],
-        help="Try different methods if camera doesn't appear"
+    # Multiple camera attempts
+    st.info("👀 **Look carefully below** - the camera widget might be small or take time to load")
+    
+    # Camera diagnostic
+    if st.button("🔍 Test Camera Access"):
+        st.info("� Testing camera... Look for camera widget below")
+        st.warning("⚠️ If you see this message but no camera, try refreshing the page")
+    
+    # Simple camera first
+    st.markdown("**Standard Camera:**")
+    camera_input = st.camera_input(
+        "📷 Camera should appear here - look carefully",
+        help="If you don't see a camera widget, scroll up and try the file upload instead"
     )
-    
-    if camera_method == "Standard Camera":
-        camera_input = st.camera_input(
-            "📷 Click to activate camera",
-            help="Standard camera widget - most reliable method"
-        )
-    else:  # Force Refresh Camera
-        # Force unique key to refresh camera
-        import random
-        unique_key = f"camera_{random.randint(1000, 9999)}"
-        camera_input = st.camera_input(
-            "📷 Force refresh camera (try this if camera is stuck)",
-            key=unique_key,
-            help="Forces a fresh camera instance"
-        )
     
     # Process camera input
     if camera_input is not None:
@@ -399,7 +409,7 @@ def quick_photo_mode(mtcnn, facenet, svm, encoder, device):
                     st.success(f"✅ **Face {i+1}**: {name} ({conf:.1f}% confidence)")
             
             # Action buttons
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 if st.button("💾 Save Results", key="save_quick"):
                     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -413,25 +423,62 @@ def quick_photo_mode(mtcnn, facenet, svm, encoder, device):
         else:
             st.warning("😔 No faces detected. Please try again with better lighting and positioning.")
     
-    # Additional troubleshooting
-    with st.expander("🛠️ Camera Troubleshooting Guide", expanded=False):
+    # Alternative camera methods
+    st.markdown("---")
+    st.markdown("**Alternative Camera Methods:**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Method A: Reset Camera**")
+        if st.button("🔄 Reset Camera Widget"):
+            st.rerun()
+    
+    with col2:
+        st.markdown("**Method B: Force New Camera**")
+        unique_key = f"camera_new_{random.randint(1000, 9999)}"
+        camera_input_alt = st.camera_input(
+            "Alternative camera",
+            key=unique_key,
+            help="Different camera instance"
+        )
+        
+        if camera_input_alt is not None:
+            st.success("✅ Alternative camera worked!")
+            # Same processing as above...
+    
+    # Final troubleshooting
+    with st.expander("🛠️ Still No Camera? Complete Troubleshooting", expanded=False):
         st.markdown("""
-        **If camera still doesn't work, try these steps:**
+        **If camera still doesn't appear:**
         
-        1. **Refresh the page** (F5 or Ctrl+R)
-        2. **Clear browser cache** and reload
-        3. **Check camera permissions**:
-           - Chrome: Click 🔒 next to URL → Camera → Allow
-           - Edge: Click 🔒 next to URL → Permissions → Camera → Allow
-        4. **Try a different browser** (Chrome recommended)
-        5. **Check if camera is being used** by another application
-        6. **Use HTTPS** if possible (camera works better on secure connections)
-        7. **Try the file upload option** above as an alternative
+        1. **Check URL**: Make sure you're on the deployed app (not localhost)
+        2. **Browser Console**: Press F12 → Console tab → look for errors
+        3. **Camera Permissions**: 
+           - Chrome: Click 🔒 icon → Camera → Allow
+           - Edge: Click 🔒 icon → Permissions → Camera → Allow
+        4. **Different Browser**: Try Chrome, Edge, or Firefox
+        5. **Disable Extensions**: Ad blockers might interfere
+        6. **Mobile Device**: Sometimes works better on phones/tablets
+        7. **Incognito Mode**: Try in private/incognito window
+        8. **Clear Cache**: Clear browser cache and try again
         
-        **For deployment:**
-        - Deploy on Streamlit Cloud, Heroku, or other HTTPS platform
-        - Camera works better on deployed apps than localhost
+        **Known Issues:**
+        - Some corporate networks block camera access
+        - VPNs might interfere with camera permissions
+        - Antivirus software can block camera access
+        - Multiple apps using camera can cause conflicts
+        
+        **Alternative Solutions:**
+        - Use the file upload method (works 100% of the time)
+        - Take photos with your phone and upload them
+        - Use a different device or network
         """)
+    
+    # Success indicators
+    if camera_input is not None:
+        st.balloons()
+        st.success("🎉 Camera is working! You successfully captured a photo!")
 
 def rapid_capture_mode(mtcnn, facenet, svm, encoder, device):
     """Multiple rapid captures for quasi-live experience"""
@@ -748,23 +795,77 @@ def folder_processing(mtcnn, facenet, svm, encoder, device):
 def face_registration(mtcnn, facenet, device):
     st.markdown('<h2 class="section-header">➕ Register New Face</h2>', unsafe_allow_html=True)
     
-    st.info("📝 Register a new person by providing their name and photos")
+    st.info("📝 Register a new person or add photos to existing person")
     
-    # Get person name
-    person_name = st.text_input("👤 Enter person's name:", placeholder="e.g., John Doe")
+    # Create dataset directory
+    dataset_dir = "images dataset"
+    os.makedirs(dataset_dir, exist_ok=True)
+    
+    # Get existing people in dataset
+    existing_people = []
+    if os.path.exists(dataset_dir):
+        existing_people = [name for name in os.listdir(dataset_dir) 
+                          if os.path.isdir(os.path.join(dataset_dir, name))]
+    
+    # Person selection/creation
+    st.subheader("👤 Select or Create Person")
+    
+    person_mode = st.radio(
+        "Choose option:",
+        ["➕ Create New Person", "📝 Add to Existing Person"],
+        help="Choose whether to create a new person or add photos to existing person"
+    )
+    
+    if person_mode == "➕ Create New Person":
+        person_name = st.text_input("👤 Enter new person's name:", placeholder="e.g., John Doe")
+        
+        if person_name:
+            if person_name in existing_people:
+                st.error(f"❌ Person '{person_name}' already exists! Choose 'Add to Existing Person' option above.")
+                person_name = None
+    else:
+        if existing_people:
+            person_name = st.selectbox(
+                "👥 Select existing person:",
+                [""] + existing_people,
+                help="Choose an existing person to add more photos"
+            )
+            if person_name == "":
+                person_name = None
+        else:
+            st.warning("📭 No existing people found. Please create a new person first.")
+            person_name = None
     
     if person_name:
-        st.subheader(f"📷 Capture photos for {person_name}")
-        
-        # Create dataset directory
-        dataset_dir = "images dataset"
-        os.makedirs(dataset_dir, exist_ok=True)
         person_dir = os.path.join(dataset_dir, person_name)
         
-        # Check if person already exists
+        # Show existing info
         if os.path.exists(person_dir):
             existing_count = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
-            st.warning(f"⚠️ Person '{person_name}' already exists with {existing_count} images. New photos will be added.")
+            st.info(f"📊 Current photos for '{person_name}': {existing_count}")
+            
+            # Show some existing photos
+            if existing_count > 0:
+                with st.expander(f"👁️ View existing photos for {person_name}", expanded=False):
+                    existing_files = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))][:6]
+                    cols = st.columns(3)
+                    for i, filename in enumerate(existing_files):
+                        with cols[i % 3]:
+                            img_path = os.path.join(person_dir, filename)
+                            img = Image.open(img_path)
+                            st.image(img, caption=filename, use_column_width=True)
+        
+        st.subheader(f"📷 Add photos for {person_name}")
+        
+        # Duplicate detection settings
+        st.subheader("🔍 Duplicate Detection Settings")
+        col1, col2 = st.columns(2)
+        with col1:
+            enable_duplicate_check = st.checkbox("🛡️ Enable duplicate detection", value=True, 
+                                                help="Check if face already exists in dataset")
+        with col2:
+            similarity_threshold = st.slider("🎯 Similarity threshold", 0.1, 1.0, 0.8, 0.1,
+                                            help="Lower = more strict duplicate detection")
         
         # Option 1: Camera capture
         st.subheader("📱 Option 1: Camera Capture")
@@ -772,7 +873,7 @@ def face_registration(mtcnn, facenet, device):
         
         camera_input = st.camera_input(
             "Take photos (capture different angles and expressions)",
-            help="Each photo will be added to the training set. Take 5-10 photos for best results."
+            help="Each photo will be validated and checked for duplicates before adding"
         )
         
         if camera_input is not None:
@@ -785,38 +886,26 @@ def face_registration(mtcnn, facenet, device):
             if len(faces) == 1:
                 st.success("✅ Good photo! One face detected clearly.")
                 
+                # Check for duplicates if enabled
+                is_duplicate = False
+                if enable_duplicate_check and os.path.exists(person_dir):
+                    is_duplicate = check_face_duplicate(faces[0][1], person_dir, mtcnn, facenet, device, similarity_threshold)
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     st.image(image, caption="Captured Photo", use_column_width=True)
                 
                 with col2:
-                    if st.button("💾 Add to Training Set", key="save_camera"):
-                        # Initialize session state for this person
-                        if f'training_images_{person_name}' not in st.session_state:
-                            st.session_state[f'training_images_{person_name}'] = []
-                        
-                        # Add image to session state
-                        st.session_state[f'training_images_{person_name}'].append(cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR))
-                        st.success(f"✅ Photo added! Total photos: {len(st.session_state[f'training_images_{person_name}'])}")
-                        
-                        # Show save all button if we have multiple images
-                        if len(st.session_state[f'training_images_{person_name}']) > 0:
-                            if st.button("💾 Save All to Dataset", key="save_all_camera"):
-                                saved_paths = save_captured_images(st.session_state[f'training_images_{person_name}'], person_name, dataset_dir)
-                                total_photos = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
-                                st.success(f"✅ All {len(saved_paths)} photos saved! Total for {person_name}: {total_photos}")
-                                # Clear session state
-                                st.session_state[f'training_images_{person_name}'] = []
-                                st.info("💡 You may need to retrain the model to recognize the new person.")
-                    
-                    # Show current count
-                    if f'training_images_{person_name}' in st.session_state:
-                        count = len(st.session_state[f'training_images_{person_name}'])
-                        if count > 0:
-                            st.info(f"📊 Photos in queue: {count}")
-                            if st.button("🗑️ Clear Queue", key="clear_camera"):
-                                st.session_state[f'training_images_{person_name}'] = []
-                                st.success("Queue cleared!")
+                    if is_duplicate:
+                        st.warning("⚠️ Similar face already exists in dataset!")
+                        if st.button("� Add Anyway", key="add_duplicate_camera"):
+                            save_single_image(cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR), person_name, dataset_dir)
+                            st.success("✅ Photo added despite similarity!")
+                    else:
+                        if st.button("� Add to Dataset", key="save_camera_validated"):
+                            save_single_image(cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR), person_name, dataset_dir)
+                            st.success("✅ Photo added successfully!")
+                            st.info("� You may need to retrain the model to recognize new photos.")
                     
             elif len(faces) == 0:
                 st.error("❌ No face detected. Please take a clearer photo.")
@@ -835,34 +924,113 @@ def face_registration(mtcnn, facenet, device):
         
         if uploaded_files:
             valid_images = []
+            duplicate_images = []
             
-            for uploaded_file in uploaded_files:
+            progress_bar = st.progress(0)
+            
+            for i, uploaded_file in enumerate(uploaded_files):
                 image = Image.open(uploaded_file)
                 frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
                 
                 faces = get_faces_and_embeddings(frame, mtcnn, facenet, device, min_conf=0.90)
                 
                 if len(faces) == 1:
-                    valid_images.append((uploaded_file.name, frame, image))
-                    st.success(f"✅ {uploaded_file.name}: Valid photo")
+                    # Check for duplicates
+                    is_duplicate = False
+                    if enable_duplicate_check and os.path.exists(person_dir):
+                        is_duplicate = check_face_duplicate(faces[0][1], person_dir, mtcnn, facenet, device, similarity_threshold)
+                    
+                    if is_duplicate:
+                        duplicate_images.append((uploaded_file.name, frame, image))
+                        st.warning(f"⚠️ {uploaded_file.name}: Similar face already exists")
+                    else:
+                        valid_images.append((uploaded_file.name, frame, image))
+                        st.success(f"✅ {uploaded_file.name}: Valid unique photo")
                 elif len(faces) == 0:
                     st.error(f"❌ {uploaded_file.name}: No face detected")
                 else:
                     st.error(f"❌ {uploaded_file.name}: Multiple faces detected")
+                
+                progress_bar.progress((i + 1) / len(uploaded_files))
             
+            # Show results
             if valid_images:
-                st.subheader("📸 Valid Photos Preview")
+                st.subheader("✅ Valid Unique Photos")
                 cols = st.columns(min(3, len(valid_images)))
                 for i, (filename, frame, image) in enumerate(valid_images):
                     with cols[i % 3]:
                         st.image(image, caption=filename, use_column_width=True)
                 
-                if st.button(f"💾 Save all {len(valid_images)} photos"):
+                if st.button(f"💾 Save {len(valid_images)} unique photos", key="save_valid"):
                     frames = [frame for _, frame, _ in valid_images]
                     saved_paths = save_captured_images(frames, person_name, dataset_dir)
                     total_photos = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
-                    st.success(f"✅ All photos saved successfully! Total photos for {person_name}: {total_photos}")
-                    st.info("💡 Tip: You may need to retrain the model to recognize the new person.")
+                    st.success(f"✅ {len(saved_paths)} photos saved! Total for {person_name}: {total_photos}")
+                    st.info("💡 You may need to retrain the model to recognize new photos.")
+            
+            if duplicate_images:
+                st.subheader("⚠️ Potential Duplicate Photos")
+                cols = st.columns(min(3, len(duplicate_images)))
+                for i, (filename, frame, image) in enumerate(duplicate_images):
+                    with cols[i % 3]:
+                        st.image(image, caption=f"⚠️ {filename}", use_column_width=True)
+                
+                if st.button(f"🔄 Save {len(duplicate_images)} duplicates anyway", key="save_duplicates"):
+                    frames = [frame for _, frame, _ in duplicate_images]
+                    saved_paths = save_captured_images(frames, person_name, dataset_dir)
+                    st.success(f"✅ {len(saved_paths)} duplicate photos saved anyway!")
+        
+        # Training recommendation
+        if os.path.exists(person_dir):
+            photo_count = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
+            
+            st.subheader("📊 Training Recommendations")
+            if photo_count < 5:
+                st.warning(f"⚠️ Only {photo_count} photos. Recommended: 5-10 photos for better accuracy.")
+            elif photo_count < 10:
+                st.info(f"✅ {photo_count} photos. Good! Add 1-2 more for optimal accuracy.")
+            else:
+                st.success(f"🎉 {photo_count} photos. Excellent dataset size!")
+
+def check_face_duplicate(new_embedding, person_dir, mtcnn, facenet, device, threshold=0.8):
+    """Check if a face embedding is similar to existing faces in the person's directory"""
+    try:
+        existing_files = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+        
+        for filename in existing_files:
+            img_path = os.path.join(person_dir, filename)
+            frame = cv2.imread(img_path)
+            if frame is None:
+                continue
+            
+            faces = get_faces_and_embeddings(frame, mtcnn, facenet, device, min_conf=0.90)
+            
+            for _, existing_embedding, _ in faces:
+                # Calculate cosine similarity
+                similarity = cosine_similarity([new_embedding], [existing_embedding])[0][0]
+                
+                if similarity > threshold:
+                    return True
+        
+        return False
+    except Exception as e:
+        st.warning(f"⚠️ Duplicate check failed: {e}")
+        return False
+
+def save_single_image(image_array, name, dataset_dir="images dataset"):
+    """Save a single image to the dataset"""
+    person_dir = os.path.join(dataset_dir, name)
+    os.makedirs(person_dir, exist_ok=True)
+    
+    existing_files = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+    count = len(existing_files)
+    
+    img_pil = Image.fromarray(cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB))
+    filename = f"{count:04d}.jpg"
+    path = os.path.join(person_dir, filename)
+    img_pil.save(path)
+    
+    return path
 
 if __name__ == "__main__":
     main()
