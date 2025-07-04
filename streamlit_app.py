@@ -732,6 +732,13 @@ def folder_processing(mtcnn, facenet, svm, encoder, device):
     
     st.info("📋 Upload multiple images to process them in batch")
     
+    # Processing mode selection
+    processing_mode = st.radio(
+        "🎯 Choose processing mode:",
+        ["🔍 Face Recognition", "👥 Face Grouping (DBSCAN Clustering)"],
+        help="Recognition: Identify known faces | Grouping: Cluster unknown faces by similarity"
+    )
+    
     uploaded_files = st.file_uploader(
         "Choose image files",
         type=['png', 'jpg', 'jpeg'],
@@ -740,15 +747,89 @@ def folder_processing(mtcnn, facenet, svm, encoder, device):
     )
     
     if uploaded_files:
+        if processing_mode == "🔍 Face Recognition":
+            process_recognition_batch(uploaded_files, mtcnn, facenet, svm, encoder, device)
+        else:
+            process_face_grouping(uploaded_files, mtcnn, facenet, device)
+
+def process_recognition_batch(uploaded_files, mtcnn, facenet, svm, encoder, device):
+    """Process uploaded files for face recognition"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    all_results = []
+    
+    for i, uploaded_file in enumerate(uploaded_files):
+        status_text.text(f"Processing {uploaded_file.name}...")
+        
+        # Load and process image
+        image = Image.open(uploaded_file)
+        frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        
+        # Resize if too large
+        max_size = 600
+        if max(image.size) > max_size:
+            image.thumbnail((max_size, max_size))
+            frame = cv2.resize(frame, (image.size[0], image.size[1]))
+        
+        results = predict_faces(frame, mtcnn, facenet, svm, encoder, device)
+        
+        if results:
+            img_with_predictions = draw_predictions(image, results)
+            all_results.append((uploaded_file.name, image, img_with_predictions, results))
+        
+        progress_bar.progress((i + 1) / len(uploaded_files))
+    
+    status_text.text("✅ Processing complete!")
+    
+    # Display results
+    if all_results:
+        st.subheader("📊 Batch Processing Results")
+        
+        for filename, original, predicted, results in all_results:
+            st.markdown(f"### 📄 {filename}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.image(original, caption="Original", use_column_width=True)
+            with col2:
+                st.image(predicted, caption="With Predictions", use_column_width=True)
+            
+            # Show detection details
+            for j, (box, name, conf) in enumerate(results):
+                if name == "Unknown":
+                    st.markdown(f'<div class="unknown-box">👤 Face {j+1}: {name}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="prediction-box">✅ Face {j+1}: {name} ({conf:.1f}% confidence)</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+    else:
+        st.warning("😔 No faces detected in any of the uploaded images.")
+
+def process_face_grouping(uploaded_files, mtcnn, facenet, device):
+    """Process uploaded files for face grouping using DBSCAN clustering"""
+    st.subheader("👥 Face Grouping Analysis")
+    
+    # Clustering parameters
+    col1, col2 = st.columns(2)
+    with col1:
+        eps = st.slider("🎯 Clustering sensitivity (eps)", 0.1, 1.0, 0.5, 0.05, 
+                       help="Lower = stricter grouping, Higher = looser grouping")
+    with col2:
+        min_samples = st.slider("👥 Minimum group size", 1, 5, 2,
+                               help="Minimum faces needed to form a group")
+    
+    if st.button("🔄 Start Clustering Analysis"):
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        all_results = []
+        # Extract all face embeddings
+        all_embeddings = []
+        face_info = []  # [(filename, face_index, box, embedding, image)]
         
         for i, uploaded_file in enumerate(uploaded_files):
-            status_text.text(f"Processing {uploaded_file.name}...")
+            status_text.text(f"Extracting faces from {uploaded_file.name}...")
             
-            # Load and process image
             image = Image.open(uploaded_file)
             frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
             
@@ -758,39 +839,89 @@ def folder_processing(mtcnn, facenet, svm, encoder, device):
                 image.thumbnail((max_size, max_size))
                 frame = cv2.resize(frame, (image.size[0], image.size[1]))
             
-            results = predict_faces(frame, mtcnn, facenet, svm, encoder, device)
+            faces = get_faces_and_embeddings(frame, mtcnn, facenet, device, min_conf=0.90)
             
-            if results:
-                img_with_predictions = draw_predictions(image, results)
-                all_results.append((uploaded_file.name, image, img_with_predictions, results))
+            for j, (box, embedding, conf) in enumerate(faces):
+                all_embeddings.append(embedding)
+                face_info.append((uploaded_file.name, j, box, embedding, image))
             
             progress_bar.progress((i + 1) / len(uploaded_files))
         
-        status_text.text("✅ Processing complete!")
+        if len(all_embeddings) == 0:
+            st.warning("😔 No faces detected in any images.")
+            return
+        
+        status_text.text("🔍 Performing clustering analysis...")
+        
+        # Perform DBSCAN clustering
+        from sklearn.cluster import DBSCAN
+        
+        # Normalize embeddings
+        normalized_embeddings = Normalizer(norm='l2').transform(all_embeddings)
+        
+        # Apply DBSCAN
+        clustering = DBSCAN(eps=eps, min_samples=min_samples, metric='cosine')
+        cluster_labels = clustering.fit_predict(normalized_embeddings)
+        
+        # Group faces by cluster
+        clusters = defaultdict(list)
+        noise_faces = []
+        
+        for i, label in enumerate(cluster_labels):
+            if label == -1:  # Noise/outlier
+                noise_faces.append(face_info[i])
+            else:
+                clusters[label].append(face_info[i])
+        
+        status_text.text("✅ Clustering complete!")
         
         # Display results
-        if all_results:
-            st.subheader("📊 Batch Processing Results")
-            
-            for filename, original, predicted, results in all_results:
-                st.markdown(f"### 📄 {filename}")
+        st.subheader(f"📊 Clustering Results")
+        st.info(f"Found {len(clusters)} groups and {len(noise_faces)} unique faces")
+        
+        # Show clusters
+        for cluster_id, faces in clusters.items():
+            with st.expander(f"👥 Group {cluster_id + 1} ({len(faces)} faces)", expanded=True):
+                cols = st.columns(min(4, len(faces)))
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.image(original, caption="Original", use_column_width=True)
-                with col2:
-                    st.image(predicted, caption="With Predictions", use_column_width=True)
+                for i, (filename, face_idx, box, embedding, image) in enumerate(faces):
+                    with cols[i % 4]:
+                        # Crop face from image
+                        face_crop = image.crop(box)
+                        st.image(face_crop, caption=f"{filename}\nFace {face_idx + 1}", use_column_width=True)
                 
-                # Show detection details
-                for j, (box, name, conf) in enumerate(results):
-                    if name == "Unknown":
-                        st.markdown(f'<div class="unknown-box">👤 Face {j+1}: {name}</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(f'<div class="prediction-box">✅ Face {j+1}: {name} ({conf:.1f}% confidence)</div>', unsafe_allow_html=True)
+                # Option to save group
+                group_name = st.text_input(f"💾 Save Group {cluster_id + 1} as:", 
+                                         placeholder="Enter person name", 
+                                         key=f"group_name_{cluster_id}")
                 
-                st.markdown("---")
-        else:
-            st.warning("😔 No faces detected in any of the uploaded images.")
+                if group_name and st.button(f"Save Group {cluster_id + 1}", key=f"save_group_{cluster_id}"):
+                    # Save all faces in this group
+                    group_images = []
+                    for filename, face_idx, box, embedding, image in faces:
+                        face_crop = image.crop(box)
+                        group_images.append(cv2.cvtColor(np.array(face_crop), cv2.COLOR_RGB2BGR))
+                    
+                    saved_paths = save_captured_images(group_images, group_name, "images dataset")
+                    st.success(f"✅ Saved {len(saved_paths)} faces as '{group_name}'")
+        
+        # Show noise/unique faces
+        if noise_faces:
+            with st.expander(f"🔍 Unique Faces ({len(noise_faces)} faces)", expanded=False):
+                cols = st.columns(min(4, len(noise_faces)))
+                
+                for i, (filename, face_idx, box, embedding, image) in enumerate(noise_faces):
+                    with cols[i % 4]:
+                        face_crop = image.crop(box)
+                        st.image(face_crop, caption=f"{filename}\nFace {face_idx + 1}", use_column_width=True)
+                        
+                        # Individual save option
+                        if st.button(f"💾 Save", key=f"save_unique_{i}"):
+                            person_name = st.text_input(f"Name for face {i+1}:", key=f"unique_name_{i}")
+                            if person_name:
+                                face_array = cv2.cvtColor(np.array(face_crop), cv2.COLOR_RGB2BGR)
+                                save_single_image(face_array, person_name, "images dataset")
+                                st.success(f"✅ Saved as '{person_name}'")
 
 def face_registration(mtcnn, facenet, device):
     st.markdown('<h2 class="section-header">➕ Register New Face</h2>', unsafe_allow_html=True)
