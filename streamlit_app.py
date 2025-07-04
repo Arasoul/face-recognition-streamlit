@@ -71,9 +71,22 @@ def load_trained_model(svm_path='svm_model.pkl', encoder_path='label_encoder.pkl
         if os.path.exists(svm_path) and os.path.exists(encoder_path):
             svm = joblib.load(svm_path)
             encoder = joblib.load(encoder_path)
+            st.success(f"✅ Successfully loaded model files: {svm_path}, {encoder_path}")
+            
+            # Show model info
+            if hasattr(svm, 'classes_'):
+                st.info(f"📊 Model trained on {len(svm.classes_)} people: {', '.join(encoder.classes_)}")
+            
             return svm, encoder
         else:
-            st.warning("⚠️ Pre-trained model files not found. Please ensure svm_model.pkl and label_encoder.pkl are in the current directory.")
+            missing_files = []
+            if not os.path.exists(svm_path):
+                missing_files.append(svm_path)
+            if not os.path.exists(encoder_path):
+                missing_files.append(encoder_path)
+            
+            st.warning(f"⚠️ Pre-trained model files not found: {', '.join(missing_files)}")
+            st.info("💡 You need to register some faces first to create the model files.")
             return None, None
     except Exception as e:
         st.error(f"❌ Failed to load model: {e}")
@@ -101,6 +114,7 @@ def predict_faces(frame, mtcnn, facenet, svm, encoder, device):
     """Predict identities of faces in a frame"""
     results = []
     if svm is None or encoder is None:
+        st.warning("⚠️ No trained model available. Please register some faces first.")
         return results
 
     faces = get_faces_and_embeddings(frame, mtcnn, facenet, device)
@@ -114,9 +128,18 @@ def predict_faces(frame, mtcnn, facenet, svm, encoder, device):
             pred = svm.predict(norm_emb)[0]
             identity = encoder.inverse_transform([pred])[0]
             confidence = probs[pred] * 100
+            
+            # Debug information
+            if st.sidebar.checkbox("🔍 Debug Mode", help="Show detailed prediction information"):
+                st.sidebar.write(f"**Face Detection Confidence:** {conf:.3f}")
+                st.sidebar.write(f"**SVM Prediction:** {identity}")
+                st.sidebar.write(f"**SVM Confidence:** {confidence:.1f}%")
+                st.sidebar.write(f"**Available Classes:** {', '.join(encoder.classes_)}")
+            
             if confidence < 40:
                 identity = 'Unknown'
-        except:
+        except Exception as e:
+            st.error(f"❌ Prediction error: {e}")
             identity, confidence = 'Unknown', 0.0
         results.append((box, identity, confidence))
     
@@ -250,8 +273,27 @@ def main():
     st.sidebar.title("🧭 Navigation")
     mode = st.sidebar.selectbox(
         "Choose Mode:",
-        ["📷 Webcam Recognition", "🖼️ Image Upload", "📁 Process Folder", "➕ Register New Face"]
+        ["📷 Webcam Recognition", "🖼️ Image Upload", "📁 Process Folder", "➕ Register New Face", "📊 Dataset Overview"]
     )
+    
+    # Dataset overview in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📈 Quick Dataset Info")
+    dataset_dir = "images dataset"
+    if os.path.exists(dataset_dir):
+        people = [name for name in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, name))]
+        if people:
+            st.sidebar.success(f"👥 People: {len(people)}")
+            total_photos = 0
+            for person in people:
+                person_dir = os.path.join(dataset_dir, person)
+                photo_count = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
+                total_photos += photo_count
+            st.sidebar.info(f"📷 Total Photos: {total_photos}")
+        else:
+            st.sidebar.warning("📭 No people in dataset yet")
+    else:
+        st.sidebar.warning("📂 No dataset folder found")
     
     if mode == "📷 Webcam Recognition":
         webcam_recognition(mtcnn, facenet, svm, encoder, device)
@@ -261,6 +303,8 @@ def main():
         folder_processing(mtcnn, facenet, svm, encoder, device)
     elif mode == "➕ Register New Face":
         face_registration(mtcnn, facenet, device)
+    elif mode == "📊 Dataset Overview":
+        dataset_overview()
 
 def webcam_recognition(mtcnn, facenet, svm, encoder, device):
     st.markdown('<h2 class="section-header">📷 Webcam Face Recognition</h2>', unsafe_allow_html=True)
@@ -445,7 +489,34 @@ def quick_photo_mode(mtcnn, facenet, svm, encoder, device):
         
         if camera_input_alt is not None:
             st.success("✅ Alternative camera worked!")
-            # Same processing as above...
+            # Process alternative camera input
+            image = Image.open(camera_input_alt)
+            frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+            
+            with st.spinner("🔍 Analyzing faces..."):
+                results = predict_faces(frame, mtcnn, facenet, svm, encoder, device)
+            
+            if results:
+                img_with_predictions = draw_predictions(image, results)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("📸 Alternative Camera Image")
+                    st.image(image, use_column_width=True)
+                
+                with col2:
+                    st.subheader("🎯 Recognition Results")
+                    st.image(img_with_predictions, use_column_width=True)
+                
+                # Results summary
+                st.subheader("📊 Recognition Summary")
+                for i, (box, name, conf) in enumerate(results):
+                    if name == "Unknown":
+                        st.error(f"👤 **Face {i+1}**: Unknown Person")
+                    else:
+                        st.success(f"✅ **Face {i+1}**: {name} ({conf:.1f}% confidence)")
+            else:
+                st.warning("😔 No faces detected in alternative camera capture.")
     
     # Final troubleshooting
     with st.expander("🛠️ Still No Camera? Complete Troubleshooting", expanded=False):
@@ -970,21 +1041,29 @@ def face_registration(mtcnn, facenet, device):
     if person_name:
         person_dir = os.path.join(dataset_dir, person_name)
         
-        # Show existing info
-        if os.path.exists(person_dir):
-            existing_count = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
-            st.info(f"📊 Current photos for '{person_name}': {existing_count}")
-            
-            # Show some existing photos
-            if existing_count > 0:
-                with st.expander(f"👁️ View existing photos for {person_name}", expanded=False):
-                    existing_files = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))][:6]
-                    cols = st.columns(3)
-                    for i, filename in enumerate(existing_files):
-                        with cols[i % 3]:
-                            img_path = os.path.join(person_dir, filename)
+    # Show existing info
+    if os.path.exists(person_dir):
+        existing_count = len([f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
+        st.info(f"📊 Current photos for '{person_name}': {existing_count}")
+        
+        # Show some existing photos
+        if existing_count > 0:
+            with st.expander(f"👁️ View existing photos for {person_name}", expanded=False):
+                existing_files = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))][:9]
+                cols = st.columns(3)
+                for i, filename in enumerate(existing_files):
+                    with cols[i % 3]:
+                        img_path = os.path.join(person_dir, filename)
+                        try:
                             img = Image.open(img_path)
                             st.image(img, caption=filename, use_column_width=True)
+                        except Exception as e:
+                            st.error(f"❌ Could not load {filename}: {e}")
+                
+                if len(existing_files) > 9:
+                    st.info(f"📷 Showing 9 of {existing_count} photos. More photos exist in the dataset.")
+    else:
+        st.info(f"📁 New person - no existing photos found.")
         
         st.subheader(f"📷 Add photos for {person_name}")
         
@@ -1126,7 +1205,16 @@ def face_registration(mtcnn, facenet, device):
 def check_face_duplicate(new_embedding, person_dir, mtcnn, facenet, device, threshold=0.8):
     """Check if a face embedding is similar to existing faces in the person's directory"""
     try:
+        if not os.path.exists(person_dir):
+            return False
+            
         existing_files = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+        
+        if not existing_files:
+            return False
+        
+        # Normalize the new embedding
+        new_embedding_norm = Normalizer(norm='l2').transform([new_embedding])[0]
         
         for filename in existing_files:
             img_path = os.path.join(person_dir, filename)
@@ -1134,18 +1222,21 @@ def check_face_duplicate(new_embedding, person_dir, mtcnn, facenet, device, thre
             if frame is None:
                 continue
             
-            faces = get_faces_and_embeddings(frame, mtcnn, facenet, device, min_conf=0.90)
+            faces = get_faces_and_embeddings(frame, mtcnn, facenet, device, min_conf=0.80)
             
             for _, existing_embedding, _ in faces:
+                # Normalize existing embedding
+                existing_embedding_norm = Normalizer(norm='l2').transform([existing_embedding])[0]
+                
                 # Calculate cosine similarity
-                similarity = cosine_similarity([new_embedding], [existing_embedding])[0][0]
+                similarity = cosine_similarity([new_embedding_norm], [existing_embedding_norm])[0][0]
                 
                 if similarity > threshold:
                     return True
         
         return False
     except Exception as e:
-        st.warning(f"⚠️ Duplicate check failed: {e}")
+        st.error(f"❌ Duplicate check failed: {e}")
         return False
 
 def save_single_image(image_array, name, dataset_dir="images dataset"):
@@ -1163,5 +1254,128 @@ def save_single_image(image_array, name, dataset_dir="images dataset"):
     
     return path
 
-if __name__ == "__main__":
-    main()
+def dataset_overview():
+    """Display comprehensive overview of the dataset"""
+    st.markdown('<h2 class="section-header">📊 Dataset Overview</h2>', unsafe_allow_html=True)
+    
+    dataset_dir = "images dataset"
+    
+    if not os.path.exists(dataset_dir):
+        st.error("📂 No dataset folder found!")
+        st.info("💡 Create some people using the 'Register New Face' feature first.")
+        return
+    
+    people = [name for name in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, name))]
+    
+    if not people:
+        st.warning("📭 Dataset folder exists but no people found!")
+        st.info("💡 Use the 'Register New Face' feature to add people to your dataset.")
+        return
+    
+    # Dataset statistics
+    st.subheader("📈 Dataset Statistics")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    total_photos = 0
+    person_stats = {}
+    
+    for person in people:
+        person_dir = os.path.join(dataset_dir, person)
+        photos = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+        person_stats[person] = len(photos)
+        total_photos += len(photos)
+    
+    with col1:
+        st.metric("👥 Total People", len(people))
+    with col2:
+        st.metric("📷 Total Photos", total_photos)
+    with col3:
+        avg_photos = total_photos / len(people) if people else 0
+        st.metric("📊 Avg Photos/Person", f"{avg_photos:.1f}")
+    
+    # People overview
+    st.subheader("👥 People in Dataset")
+    
+    for person in sorted(people):
+        photo_count = person_stats[person]
+        person_dir = os.path.join(dataset_dir, person)
+        
+        with st.expander(f"👤 {person} ({photo_count} photos)", expanded=False):
+            if photo_count > 0:
+                # Show sample photos
+                photos = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png', '.jpeg'))][:6]
+                cols = st.columns(min(3, len(photos)))
+                
+                for i, photo_name in enumerate(photos):
+                    with cols[i % 3]:
+                        photo_path = os.path.join(person_dir, photo_name)
+                        try:
+                            img = Image.open(photo_path)
+                            st.image(img, caption=photo_name, use_column_width=True)
+                        except Exception as e:
+                            st.error(f"❌ Could not load {photo_name}")
+                
+                if len(photos) < photo_count:
+                    st.info(f"📷 Showing {len(photos)} of {photo_count} photos")
+                
+                # Training status
+                if photo_count < 5:
+                    st.warning(f"⚠️ Only {photo_count} photos. Recommended: 5+ photos for better accuracy.")
+                elif photo_count < 10:
+                    st.success(f"✅ {photo_count} photos. Good training data!")
+                else:
+                    st.success(f"🎉 {photo_count} photos. Excellent training data!")
+            else:
+                st.warning("📭 No photos found for this person")
+    
+    # Model status
+    st.subheader("🤖 Model Status")
+    
+    if os.path.exists("svm_model.pkl") and os.path.exists("label_encoder.pkl"):
+        st.success("✅ Trained model files found")
+        
+        # Try to load and show model info
+        try:
+            encoder = joblib.load("label_encoder.pkl")
+            st.info(f"📊 Model trained on: {', '.join(encoder.classes_)}")
+        except Exception as e:
+            st.error(f"❌ Could not read model details: {e}")
+    else:
+        st.warning("⚠️ No trained model found")
+        st.info("💡 Add more people and photos, then the model will be automatically created")
+    
+    # Dataset health check
+    st.subheader("🔍 Dataset Health Check")
+    
+    issues = []
+    recommendations = []
+    
+    # Check for people with too few photos
+    for person, count in person_stats.items():
+        if count < 3:
+            issues.append(f"👤 {person} has only {count} photo(s)")
+            recommendations.append(f"Add more photos for {person}")
+    
+    # Check total dataset size
+    if len(people) < 2:
+        issues.append("Only 1 person in dataset")
+        recommendations.append("Add at least 2 people for face recognition to work properly")
+    
+    if total_photos < 10:
+        issues.append(f"Only {total_photos} total photos")
+        recommendations.append("Add more photos overall for better model accuracy")
+    
+    if issues:
+        st.warning("⚠️ Dataset Issues Found:")
+        for issue in issues:
+            st.write(f"• {issue}")
+        
+        st.info("💡 Recommendations:")
+        for rec in recommendations:
+            st.write(f"• {rec}")
+    else:
+        st.success("✅ Dataset looks healthy!")
+        st.balloons()
+
+# ...existing code...
