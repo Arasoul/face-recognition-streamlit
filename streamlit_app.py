@@ -59,10 +59,19 @@ st.markdown("""
 @st.cache_resource
 def setup_models(image_size=160, margin=20, pretrained='vggface2'):
     """Initialize and cache the face detection and recognition models"""
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    mtcnn = MTCNN(image_size=image_size, margin=margin, keep_all=True, device=device)
-    facenet = InceptionResnetV1(pretrained=pretrained).eval().to(device)
-    return mtcnn, facenet, device
+    try:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        st.info(f"🖥️ Initializing models on device: {device}")
+        
+        mtcnn = MTCNN(image_size=image_size, margin=margin, keep_all=True, device=device)
+        facenet = InceptionResnetV1(pretrained=pretrained).eval().to(device)
+        
+        st.success("✅ Face detection and recognition models loaded successfully!")
+        return mtcnn, facenet, device
+    except Exception as e:
+        st.error(f"❌ Failed to initialize models: {e}")
+        st.info("💡 This might be due to missing dependencies. Check the requirements.txt file.")
+        return None, None, 'cpu'
 
 @st.cache_resource
 def load_trained_model(svm_path='svm_model.pkl', encoder_path='label_encoder.pkl'):
@@ -253,21 +262,34 @@ def main():
     # Initialize models
     with st.spinner("🔄 Loading models..."):
         mtcnn, facenet, device = setup_models()
+        
+        if mtcnn is None or facenet is None:
+            st.error("❌ Failed to initialize face detection/recognition models.")
+            st.info("💡 You can still view the dataset, but face recognition won't work.")
+            st.stop()
+            
         svm, encoder = load_trained_model()
     
     if svm is None or encoder is None:
-        st.error("❌ Cannot proceed without trained models. Please ensure the model files are available.")
+        st.warning("⚠️ No trained models found. You can still use the registration feature to create models.")
         st.info("""
-        **Required files:**
+        **Missing files (optional):**
         - `svm_model.pkl`
         - `label_encoder.pkl`
         
-        These files should be in the same directory as this script.
+        **What you can do:**
+        1. Use the "Register New Face" feature to create your first person
+        2. Upload photos of faces to build the dataset
+        3. The system will create model files automatically
         """)
-        st.stop()
+        # Don't stop - allow registration to work
     
-    st.success("✅ Models loaded successfully!")
-    st.info(f"🖥️ Using device: {device}")
+    else:
+        st.success("✅ Models loaded successfully!")
+        st.info(f"🖥️ Using device: {device}")
+    
+    # Add dataset overview
+    dataset_overview()
     
     # Sidebar navigation
     st.sidebar.title("🧭 Navigation")
